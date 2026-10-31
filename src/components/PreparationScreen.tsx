@@ -72,7 +72,7 @@ export const PreparationScreen: React.FC<PreparationScreenProps> = ({
             </span>
             <span aria-hidden="true" className="text-slate-600">·</span>
             <a
-              href="/assets/aistudio/Konsep_dan_Analisis_Data_Terstruktur_ee9558af.pdf"
+              href={`${import.meta.env.BASE_URL}assets/aistudio/Konsep_dan_Analisis_Data_Terstruktur_ee9558af.pdf`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-[#38BDF8] hover:underline"

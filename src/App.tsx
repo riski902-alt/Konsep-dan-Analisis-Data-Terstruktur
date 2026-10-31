@@ -6,6 +6,7 @@ import { QuestionControlDock } from './components/QuestionControlDock';
 import { TopRaceHud } from './components/TopRaceHud';
 import { VictoryScreen } from './components/VictoryScreen';
 import { RaceArenaCanvas, type BikeFXEvent } from './game3d/RaceArenaCanvas';
+import { raceClient } from './services/raceClient';
 import type {
   AudioSettings,
   CameraMode,
@@ -13,8 +14,6 @@ import type {
   PublicQuestion,
   RaceSessionState,
   RaceStatus,
-  StartRaceResponse,
-  SubmitAnswerResponse,
   TeamId,
 } from './types/game';
 
@@ -140,21 +139,12 @@ export default function App() {
 
   const fetchInitialData = useCallback(async () => {
     try {
-      const [tpRes, lbRes] = await Promise.all([
-        fetch('/api/topics'),
-        fetch('/api/race/leaderboard'),
-      ]);
-      if (tpRes.ok) {
-        const tpJson = await tpRes.json();
-        if (Array.isArray(tpJson.topics) && tpJson.topics.length > 0) {
-          setTopics(tpJson.topics);
-        }
+      const initData = await raceClient.getInitialData();
+      if (Array.isArray(initData.topics) && initData.topics.length > 0) {
+        setTopics(initData.topics);
       }
-      if (lbRes.ok) {
-        const lbJson = await lbRes.json();
-        if (Array.isArray(lbJson.leaderboard)) {
-          setLeaderboard(lbJson.leaderboard);
-        }
+      if (Array.isArray(initData.leaderboard)) {
+        setLeaderboard(initData.leaderboard);
       }
     } catch {
       // silent fallback
@@ -198,21 +188,12 @@ export default function App() {
     clearCountdownTimers();
 
     try {
-      const res = await fetch('/api/race/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topicFilter,
-          lamaccaPlayer: lamaccaPlayer.trim() || 'Pembalap LAMACCA',
-          toaccaPlayer: toaccaPlayer.trim() || 'Pembalap TOACCA',
-        }),
-      });
+      const data = await raceClient.startRace(
+        topicFilter,
+        lamaccaPlayer.trim() || 'Pembalap LAMACCA',
+        toaccaPlayer.trim() || 'Pembalap TOACCA',
+      );
 
-      if (!res.ok) {
-        throw new Error('Gagal memulai sesi balapan.');
-      }
-
-      const data = (await res.json()) as StartRaceResponse;
       setSession(data.session);
       setQuestions(data.questions);
       setElapsedSeconds(0);
@@ -247,14 +228,9 @@ export default function App() {
         soundEngine.setCruiseMode(true);
         soundEngine.startRaceMusic();
         try {
-          const goRes = await fetch('/api/race/mark-go', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: data.session.sessionId }),
-          });
-          if (goRes.ok) {
-            const goData = await goRes.json();
-            setSession(goData.session);
+          const goSession = await raceClient.markGo(data.session.sessionId);
+          if (goSession) {
+            setSession(goSession);
           }
         } catch {
           // ignore
@@ -279,13 +255,8 @@ export default function App() {
     soundEngine.stopEngineIdle();
     soundEngine.playVictoryFanfareAndTrophy();
     try {
-      const lbRes = await fetch('/api/race/leaderboard');
-      if (lbRes.ok) {
-        const lbJson = await lbRes.json();
-        if (Array.isArray(lbJson.leaderboard)) {
-          setLeaderboard(lbJson.leaderboard);
-        }
-      }
+      const lb = await raceClient.getLeaderboard();
+      setLeaderboard(lb);
     } catch {
       // ignore
     }
@@ -296,20 +267,14 @@ export default function App() {
       if (!session || uiStatus !== 'racing') return;
 
       try {
-        const res = await fetch('/api/race/answer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: session.sessionId,
-            team,
-            questionId,
-            answer,
-          }),
-        });
+        const data = await raceClient.submitAnswer(
+          session.sessionId,
+          team,
+          questionId,
+          answer,
+        );
+        if (!data) return;
 
-        if (!res.ok) return;
-
-        const data = (await res.json()) as SubmitAnswerResponse;
         setSession(data.session);
 
         if (team === 'lamacca') {
@@ -336,7 +301,7 @@ export default function App() {
           }, 1150);
         }
       } catch {
-        setErrorNotice('Koneksi ke server validasi terputus sementara. Coba kirim ulang.');
+        setErrorNotice('Terjadi kendala saat memproses jawaban. Coba klik ulang.');
       }
     },
     [session, uiStatus, transitionToVictory],
@@ -345,15 +310,9 @@ export default function App() {
   const handleForceConcludeRace = useCallback(async () => {
     if (!session || uiStatus !== 'racing') return;
     try {
-      const res = await fetch('/api/race/conclude', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: session.sessionId }),
-      });
-      if (!res.ok) return;
-      const data = (await res.json()) as { session: RaceSessionState };
-      if (data.session.status === 'finished') {
-        transitionToVictory(data.session);
+      const concluded = await raceClient.concludeRace(session.sessionId);
+      if (concluded && concluded.status === 'finished') {
+        transitionToVictory(concluded);
       }
     } catch {
       setErrorNotice('Gagal menyelesaikan sesi.');
