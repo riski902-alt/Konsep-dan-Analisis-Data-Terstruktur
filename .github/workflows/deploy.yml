@@ -13,8 +13,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages-deploy"
-  cancel-in-progress: true
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -29,24 +29,28 @@ jobs:
           node-version: 22
 
       - name: Instal dependensi
-        run: npm install --no-audit --no-fund
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
-      - name: Build aplikasi statis (Vite + Three.js)
+      - name: Build aplikasi statis 3D (Vite + Three.js)
         run: npm run build
+
+      - name: Pastikan file .nojekyll tersedia di dist
+        run: touch ./dist/.nojekyll
 
       - name: Simpan artefak GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
-      - name: Publikasikan juga ke branch gh-pages (agar mode Deploy from Branch maupun GitHub Actions keduanya langsung jalan)
+      - name: Publikasikan juga ke branch gh-pages
+        continue-on-error: true
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           enable_jekyll: false
 
-  deploy-pages:
+  deploy:
     needs: build
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -56,9 +60,7 @@ jobs:
     steps:
       - name: Konfigurasi GitHub Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Deploy ke GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

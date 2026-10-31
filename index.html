@@ -19,20 +19,27 @@
     <script type="module" src="./src/main.tsx"></script>
     <script>
       (function () {
-        if (!window.__VITE_PROCESSED__) {
-          window.__RAW_REPO_ROOT_MODE__ = true;
+        if (!window.__VITE_PROCESSED__ && /\.github\.io$/i.test(window.location.hostname)) {
           document.documentElement.style.backgroundColor = '#070D19';
           document.body.style.backgroundColor = '#070D19';
+          document.body.style.color = '#F8FAFC';
+          document.body.style.fontFamily = 'Plus Jakarta Sans, system-ui, sans-serif';
+          document.body.style.display = 'flex';
+          document.body.style.alignItems = 'center';
+          document.body.style.justifyContent = 'center';
+          document.body.style.minHeight = '100vh';
           document.body.style.margin = '0';
-          var css = document.createElement('link');
-          css.rel = 'stylesheet';
-          css.href = './public/standalone/game.css';
-          document.head.appendChild(css);
-
-          var js = document.createElement('script');
-          js.type = 'module';
-          js.src = './public/standalone/game.js';
-          document.body.appendChild(js);
+          var root = document.getElementById('root');
+          if (root) {
+            root.innerHTML =
+              '<div style="max-width:520px;padding:24px;border-radius:16px;background:#0B132B;border:1px solid rgba(56,189,248,0.45);text-align:center">' +
+              '<h2 style="margin:0 0 8px;color:#38BDF8;font-size:18px">Menyiapkan Arena 3D LAMACCA VS TOACCA...</h2>' +
+              '<p style="margin:0 0 12px;font-size:13px;line-height:1.6;color:#CBD5E1">Proses kompilasi otomatis <b>GitHub Actions</b> sedang berlangsung. Halaman ini akan memuat ulang secara otomatis dalam beberapa detik, atau pastikan <b>Settings → Pages → Source</b> dipilih ke <b>GitHub Actions</b>.</p>' +
+              '</div>';
+          }
+          window.setTimeout(function () {
+            window.location.reload();
+          }, 8000);
         }
       })();
     </script>

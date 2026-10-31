@@ -74,12 +74,7 @@ export const PreparationScreen: React.FC<PreparationScreenProps> = ({
             </span>
             <span aria-hidden="true" className="text-slate-600">·</span>
             <a
-              href={
-                typeof window !== 'undefined' &&
-                (window as unknown as { __RAW_REPO_ROOT_MODE__?: boolean }).__RAW_REPO_ROOT_MODE__
-                  ? './public/assets/aistudio/Konsep_dan_Analisis_Data_Terstruktur_ee9558af.pdf'
-                  : `${import.meta.env.BASE_URL}assets/aistudio/Konsep_dan_Analisis_Data_Terstruktur_ee9558af.pdf`
-              }
+              href={`${import.meta.env.BASE_URL}assets/aistudio/Konsep_dan_Analisis_Data_Terstruktur_ee9558af.pdf`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-[#38BDF8] hover:underline"

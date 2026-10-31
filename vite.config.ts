@@ -1,12 +1,15 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
 
-function githubPagesStandaloneSyncPlugin(): Plugin {
+const rootDir = path.dirname(fileURLToPath(import.meta.url));
+
+function githubPagesOutputPlugin(): Plugin {
   return {
-    name: 'github-pages-standalone-sync',
+    name: 'github-pages-output',
     transformIndexHtml(html) {
       return html.replace(
         '<!--VITE_PROCESSED_MARKER-->',
@@ -14,22 +17,9 @@ function githubPagesStandaloneSyncPlugin(): Plugin {
       );
     },
     closeBundle() {
-      const distAssetsDir = path.resolve(__dirname, 'dist', 'assets');
-      const standaloneDir = path.resolve(__dirname, 'public', 'standalone');
-      if (!fs.existsSync(distAssetsDir)) return;
-
-      fs.mkdirSync(standaloneDir, {recursive: true});
-      for (const fileName of fs.readdirSync(distAssetsDir)) {
-        const srcFile = path.join(distAssetsDir, fileName);
-        const destFile = path.join(standaloneDir, fileName);
-        if (fs.statSync(srcFile).isFile()) {
-          fs.copyFileSync(srcFile, destFile);
-        }
-      }
-
-      const rootNoJekyll = path.resolve(__dirname, '.nojekyll');
-      if (!fs.existsSync(rootNoJekyll)) {
-        fs.writeFileSync(rootNoJekyll, '');
+      const distDir = path.resolve(rootDir, 'dist');
+      if (fs.existsSync(distDir)) {
+        fs.writeFileSync(path.join(distDir, '.nojekyll'), '');
       }
     },
   };
@@ -38,21 +28,22 @@ function githubPagesStandaloneSyncPlugin(): Plugin {
 export default defineConfig(({command}) => {
   return {
     base: command === 'build' ? './' : '/',
-    plugins: [react(), tailwindcss(), githubPagesStandaloneSyncPlugin()],
+    plugins: [react(), tailwindcss(), githubPagesOutputPlugin()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': rootDir,
       },
     },
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
       sourcemap: false,
+      chunkSizeWarningLimit: 1600,
       rollupOptions: {
         output: {
-          entryFileNames: 'assets/game.js',
-          chunkFileNames: 'assets/[name].js',
-          assetFileNames: 'assets/game.[ext]',
+          entryFileNames: 'assets/game-[hash].js',
+          chunkFileNames: 'assets/[name]-[hash].js',
+          assetFileNames: 'assets/[name]-[hash].[ext]',
         },
       },
     },
