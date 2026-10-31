@@ -1,0 +1,6 @@
+{
+  "name": "LAMACCA VS TOACCA — 3D Edu Racing Challenge",
+  "description": "Game edukasi balap motor 3D interaktif dua pemain untuk siswa SMP dengan materi Konsep dan Analisis Data Terstruktur.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
