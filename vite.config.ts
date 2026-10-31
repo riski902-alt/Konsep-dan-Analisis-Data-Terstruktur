@@ -1,14 +1,44 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, type Plugin} from 'vite';
+
+function githubPagesStandaloneSyncPlugin(): Plugin {
+  return {
+    name: 'github-pages-standalone-sync',
+    transformIndexHtml(html) {
+      return html.replace(
+        '<!--VITE_PROCESSED_MARKER-->',
+        '<script>window.__VITE_PROCESSED__=true;</script>',
+      );
+    },
+    closeBundle() {
+      const distAssetsDir = path.resolve(__dirname, 'dist', 'assets');
+      const standaloneDir = path.resolve(__dirname, 'public', 'standalone');
+      if (!fs.existsSync(distAssetsDir)) return;
+
+      fs.mkdirSync(standaloneDir, {recursive: true});
+      for (const fileName of fs.readdirSync(distAssetsDir)) {
+        const srcFile = path.join(distAssetsDir, fileName);
+        const destFile = path.join(standaloneDir, fileName);
+        if (fs.statSync(srcFile).isFile()) {
+          fs.copyFileSync(srcFile, destFile);
+        }
+      }
+
+      const rootNoJekyll = path.resolve(__dirname, '.nojekyll');
+      if (!fs.existsSync(rootNoJekyll)) {
+        fs.writeFileSync(rootNoJekyll, '');
+      }
+    },
+  };
+}
 
 export default defineConfig(({command}) => {
   return {
-    // Relative './' base ensures built assets load properly on GitHub Pages subpaths
-    // (e.g. https://<user>.github.io/Konsep-dan-Analisis-Data-Terstruktur/) as well as root '/'.
     base: command === 'build' ? './' : '/',
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), githubPagesStandaloneSyncPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -18,6 +48,13 @@ export default defineConfig(({command}) => {
       outDir: 'dist',
       assetsDir: 'assets',
       sourcemap: false,
+      rollupOptions: {
+        output: {
+          entryFileNames: 'assets/game.js',
+          chunkFileNames: 'assets/[name].js',
+          assetFileNames: 'assets/game.[ext]',
+        },
+      },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
