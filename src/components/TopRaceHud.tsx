@@ -3,11 +3,13 @@ import {
   Camera,
   ChevronDown,
   ChevronUp,
+  Flame,
   Music,
   RotateCcw,
   Volume2,
   VolumeX,
 } from 'lucide-react';
+import { getLevelConfig } from '../config/levels';
 import type {
   AudioSettings,
   CameraMode,
@@ -18,6 +20,7 @@ import type {
 interface TopRaceHudProps {
   status: RaceStatus;
   session: RaceSessionState | null;
+  arenaLevel: number;
   elapsedSeconds: number;
   cameraMode: CameraMode;
   onChangeCamera: (mode: CameraMode) => void;
@@ -37,6 +40,7 @@ function formatDuration(sec: number): string {
 export const TopRaceHud: React.FC<TopRaceHudProps> = ({
   status,
   session,
+  arenaLevel,
   elapsedSeconds,
   cameraMode,
   onChangeCamera,
@@ -53,26 +57,43 @@ export const TopRaceHud: React.FC<TopRaceHudProps> = ({
   const toaccaSteps = session?.toacca.steps ?? 0;
   const lamaccaPct = Math.min(100, (lamaccaSteps / Math.max(1, totalSteps)) * 100);
   const toaccaPct = Math.min(100, (toaccaSteps / Math.max(1, totalSteps)) * 100);
+  const lvlCfg = getLevelConfig(arenaLevel);
 
   return (
     <header className="fixed top-0 left-0 right-0 z-30 pointer-events-none px-3 pt-2">
       <div className="max-w-[1380px] mx-auto">
-        <div className="pointer-events-auto flex items-center justify-between gap-3 bg-[#070D19]/90 border border-white/12 rounded-lg px-3 py-1.5 shadow-md">
-          {/* Zone 1: Brand Title & Timer */}
-          <div className="flex items-center gap-2.5 shrink-0">
+        <div className="pointer-events-auto flex items-center justify-between gap-2.5 bg-[#070D19]/90 border border-white/12 rounded-lg px-3 py-1.5 shadow-md">
+          {/* Zone 1: Brand Title, Active Level & Adrenaline Status, & Timer */}
+          <div className="flex items-center gap-2 shrink-0">
             <span className="font-display font-bold text-sm md:text-base tracking-wider text-white whitespace-nowrap">
               LAMACCA <span className="text-[#FBBF24]">VS</span> TOACCA
             </span>
+
+            {status !== 'preparing' && (
+              <>
+                <span aria-hidden="true" className="text-slate-600">·</span>
+                <span
+                  className={`inline-flex items-center gap-1 text-[11px] font-mono-num font-bold whitespace-nowrap ${lvlCfg.uiTextClass}`}
+                >
+                  <Flame className="w-3.5 h-3.5 shrink-0" />
+                  <span>LEVEL {lvlCfg.level}</span>
+                  <span className="hidden md:inline font-normal text-slate-300">
+                    · {lvlCfg.adrenalineBadge} ({lvlCfg.speedMultiplierLabel})
+                  </span>
+                </span>
+              </>
+            )}
+
             {session && status !== 'preparing' && (
-              <span className="hidden lg:inline-block text-[11px] text-slate-400 whitespace-nowrap">
-                · Waktu <strong className="text-white font-mono-num">{formatDuration(elapsedSeconds)}</strong>
+              <span className="hidden xl:inline-block text-[11px] text-slate-400 whitespace-nowrap">
+                · <strong className="text-white font-mono-num">{formatDuration(elapsedSeconds)}</strong>
               </span>
             )}
           </div>
 
           {/* Zone 2: Independent Dual-Motor Track & Question Progress */}
           {status !== 'preparing' && session && (
-            <div className="flex-1 max-w-2xl hidden sm:grid grid-cols-2 gap-3 px-2 items-center">
+            <div className="flex-1 max-w-xl hidden sm:grid grid-cols-2 gap-3 px-2 items-center">
               {/* LAMACCA Inline Bar */}
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-display font-bold text-[#38BDF8] shrink-0">
@@ -110,7 +131,7 @@ export const TopRaceHud: React.FC<TopRaceHudProps> = ({
           {/* Zone 3: Slim Camera, Audio & Collapse Actions */}
           <div className="flex items-center gap-1.5 shrink-0 relative">
             {status === 'racing' && (
-              <div className="hidden md:flex items-center gap-0.5 p-0.5 bg-slate-900 rounded-md border border-white/10">
+              <div className="hidden lg:flex items-center gap-0.5 p-0.5 bg-slate-900 rounded-md border border-white/10">
                 <Camera className="w-3 h-3 text-slate-400 ml-1.5 mr-0.5" />
                 {(
                   [
@@ -167,7 +188,7 @@ export const TopRaceHud: React.FC<TopRaceHudProps> = ({
               ) : (
                 <Volume2 className="w-3.5 h-3.5 text-[#34D399]" />
               )}
-              <span className="hidden lg:inline">Suara</span>
+              <span className="hidden xl:inline">Suara</span>
             </button>
 
             {status === 'racing' && (
@@ -200,7 +221,7 @@ export const TopRaceHud: React.FC<TopRaceHudProps> = ({
                 className="px-2 py-1 rounded-md bg-slate-900 hover:bg-slate-800 border border-white/10 text-[11px] font-medium text-slate-300 flex items-center gap-1 transition-colors whitespace-nowrap"
               >
                 <RotateCcw className="w-3 h-3" />
-                <span className="hidden lg:inline">Menu</span>
+                <span className="hidden xl:inline">Menu</span>
               </button>
             )}
 

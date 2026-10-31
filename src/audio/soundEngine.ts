@@ -1,3 +1,4 @@
+import { getLevelConfig } from '../config/levels';
 import type { AudioSettings, TeamId } from '../types/game';
 
 class RacingSoundEngine {
@@ -11,6 +12,8 @@ class RacingSoundEngine {
   private idleOsc2: OscillatorNode | null = null;
   private idleFilter: BiquadFilterNode | null = null;
   private idleRunning = false;
+  private isCruising = false;
+  private currentLevel = 1;
 
   private musicTimer: number | null = null;
   private musicStep = 0;
@@ -159,22 +162,96 @@ class RacingSoundEngine {
   }
 
   public setCruiseMode(cruising: boolean): void {
+    this.isCruising = cruising;
     const ctx = this.ensureContext();
     if (!ctx) return;
     if (!this.idleRunning) {
       this.startEngineIdle();
     }
     const now = ctx.currentTime;
+    const cfg = getLevelConfig(this.currentLevel);
     if (this.idleOsc1 && this.idleOsc2 && this.idleFilter) {
       this.idleOsc1.frequency.cancelScheduledValues(now);
       this.idleOsc2.frequency.cancelScheduledValues(now);
       this.idleFilter.frequency.cancelScheduledValues(now);
 
-      const baseFreq = cruising ? 72 : 54;
-      this.idleOsc1.frequency.setTargetAtTime(baseFreq, now, 0.25);
-      this.idleOsc2.frequency.setTargetAtTime(baseFreq * 2.01, now, 0.25);
-      this.idleFilter.frequency.setTargetAtTime(cruising ? 310 : 210, now, 0.25);
+      const baseFreq = cruising ? cfg.engineCruiseHz : 54;
+      this.idleOsc1.frequency.setTargetAtTime(baseFreq, now, 0.22);
+      this.idleOsc2.frequency.setTargetAtTime(baseFreq * 2.01, now, 0.22);
+      this.idleFilter.frequency.setTargetAtTime(
+        cruising ? 280 + this.currentLevel * 55 : 210,
+        now,
+        0.22,
+      );
     }
+  }
+
+  public setAdrenalineLevel(level: number): void {
+    const clamped = Math.min(5, Math.max(1, Math.round(level)));
+    const changed = clamped !== this.currentLevel;
+    this.currentLevel = clamped;
+
+    if (this.isCruising) {
+      this.setCruiseMode(true);
+    }
+
+    if (changed && this.musicTimer !== null && !this.isVictoryMusic) {
+      this.scheduleMusicInterval();
+    }
+  }
+
+  public playLevelUpAdrenaline(level: number): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxGain) return;
+    const now = ctx.currentTime;
+    const clamped = Math.min(5, Math.max(1, Math.round(level)));
+    const pitchShift = 1 + (clamped - 1) * 0.09;
+
+    // Dramatic rising adrenaline arpeggio + turbo whoosh
+    const baseNotes = [392.0, 493.88, 587.33, 783.99, 987.77];
+    baseNotes.forEach((n, idx) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(n * pitchShift, now + idx * 0.065);
+
+      const flt = ctx.createBiquadFilter();
+      flt.type = 'lowpass';
+      flt.frequency.value = 1800 + clamped * 220;
+
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0.001, now + idx * 0.065);
+      env.gain.linearRampToValueAtTime(0.24, now + idx * 0.065 + 0.02);
+      env.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.065 + 0.36);
+
+      osc.connect(flt);
+      flt.connect(env);
+      env.connect(this.sfxGain!);
+      osc.start(now + idx * 0.065);
+      osc.stop(now + idx * 0.065 + 0.4);
+    });
+
+    if (clamped > 1) {
+      this.playCrowdCheer(0.85, 0.2);
+    }
+  }
+
+  public playTimerWarningTick(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxGain) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880 + this.currentLevel * 60, now);
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.001, now);
+    env.gain.linearRampToValueAtTime(0.11, now + 0.01);
+    env.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+    osc.connect(env);
+    env.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.09);
   }
 
   public playCorrectAcceleration(team: TeamId): void {
@@ -357,15 +434,15 @@ class RacingSoundEngine {
     noise.stop(now + durationSec + 0.05);
   }
 
-  public startRaceMusic(): void {
-    const ctx = this.ensureContext();
-    if (!ctx || !this.musicGain) return;
-    this.stopMusicLoop();
-    this.isVictoryMusic = false;
-    if (!this.settings.musicEnabled || this.settings.muted) return;
+  private scheduleMusicInterval(): void {
+    if (this.musicTimer !== null) {
+      clearInterval(this.musicTimer);
+      this.musicTimer = null;
+    }
 
-    this.musicStep = 0;
-    const stepMs = 120; // ~125 BPM 16th-note pulse
+    const cfg = getLevelConfig(this.currentLevel);
+    const stepMs = cfg.musicStepMs;
+    const pitchMul = 1 + (this.currentLevel - 1) * 0.045;
     const bassPattern = [
       110, 110, 220, 110, 130.81, 130.81, 196, 130.81,
       146.83, 146.83, 220, 146.83, 164.81, 146.83, 130.81, 98,
@@ -383,21 +460,21 @@ class RacingSoundEngine {
       const step = this.musicStep % 16;
       this.musicStep += 1;
 
-      // Kick on 0, 4, 8, 12
-      if (step % 4 === 0) {
+      // Kick on 0, 4, 8, 12 (plus extra double-kick on Level 4–5!)
+      if (step % 4 === 0 || (this.currentLevel >= 4 && step === 14)) {
         const kick = this.ctx.createOscillator();
         kick.type = 'sine';
-        kick.frequency.setValueAtTime(125, now);
-        kick.frequency.exponentialRampToValueAtTime(42, now + 0.11);
+        kick.frequency.setValueAtTime(128 + this.currentLevel * 5, now);
+        kick.frequency.exponentialRampToValueAtTime(42, now + 0.1);
 
         const kEnv = this.ctx.createGain();
-        kEnv.gain.setValueAtTime(0.45, now);
-        kEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+        kEnv.gain.setValueAtTime(0.46, now);
+        kEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
 
         kick.connect(kEnv);
         kEnv.connect(this.musicGain);
         kick.start(now);
-        kick.stop(now + 0.14);
+        kick.stop(now + 0.13);
       }
 
       // Bass synth
@@ -405,40 +482,51 @@ class RacingSoundEngine {
       if (bFreq > 0) {
         const bass = this.ctx.createOscillator();
         bass.type = 'sawtooth';
-        bass.frequency.setValueAtTime(bFreq, now);
+        bass.frequency.setValueAtTime(bFreq * pitchMul, now);
 
         const bFlt = this.ctx.createBiquadFilter();
         bFlt.type = 'lowpass';
-        bFlt.frequency.value = 480;
+        bFlt.frequency.value = 460 + this.currentLevel * 85;
 
         const bEnv = this.ctx.createGain();
         bEnv.gain.setValueAtTime(0.18, now);
-        bEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+        bEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.095);
 
         bass.connect(bFlt);
         bFlt.connect(bEnv);
         bEnv.connect(this.musicGain);
         bass.start(now);
-        bass.stop(now + 0.11);
+        bass.stop(now + 0.105);
       }
 
       // Melodic lead arp
       const aFreq = arpPattern[step];
       if (aFreq > 0) {
         const arp = this.ctx.createOscillator();
-        arp.type = 'triangle';
-        arp.frequency.setValueAtTime(aFreq, now);
+        arp.type = this.currentLevel >= 4 ? 'sawtooth' : 'triangle';
+        arp.frequency.setValueAtTime(aFreq * pitchMul, now);
 
         const aEnv = this.ctx.createGain();
-        aEnv.gain.setValueAtTime(0.11, now);
-        aEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+        aEnv.gain.setValueAtTime(this.currentLevel >= 4 ? 0.08 : 0.11, now);
+        aEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
 
         arp.connect(aEnv);
         aEnv.connect(this.musicGain);
         arp.start(now);
-        arp.stop(now + 0.12);
+        arp.stop(now + 0.11);
       }
     }, stepMs);
+  }
+
+  public startRaceMusic(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.musicGain) return;
+    this.stopMusicLoop();
+    this.isVictoryMusic = false;
+    if (!this.settings.musicEnabled || this.settings.muted) return;
+
+    this.musicStep = 0;
+    this.scheduleMusicInterval();
   }
 
   public playVictoryFanfareAndTrophy(): void {

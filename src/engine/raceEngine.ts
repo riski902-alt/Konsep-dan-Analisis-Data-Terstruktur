@@ -29,12 +29,12 @@ interface InternalSession {
 }
 
 export const TOPIC_LABELS: Record<number, string> = {
-  0: 'Semua Materi Lengkap (100 Soal Sesuai Urutan File)',
-  1: 'Topik 1: Konsep Dasar Data: Data Terstruktur vs. Tidak Terstruktur (20 Soal)',
-  2: 'Topik 2: Pengidentifikasian dan Pemodelan Data Terstruktur (20 Soal)',
-  3: 'Topik 3: Antarmuka dan Elemen Dasar Lembar Kerja Pengolah Data (20 Soal)',
-  4: 'Topik 4: Pengolahan dan Pengorganisasian Data (20 Soal)',
-  5: 'Topik 5: Praktik Analisis dan Pengolahan Data Sederhana (20 Soal)',
+  0: 'Semua Level Beruntun: Level 1 s/d Level 5 (100 Soal)',
+  1: 'Level 1: Konsep Dasar Data: Data Terstruktur vs. Tidak Terstruktur (20 Soal)',
+  2: 'Level 2: Pengidentifikasian dan Pemodelan Data Terstruktur (20 Soal)',
+  3: 'Level 3: Antarmuka dan Elemen Dasar Lembar Kerja Pengolah Data (20 Soal)',
+  4: 'Level 4: Pengolahan dan Pengorganisasian Data (20 Soal)',
+  5: 'Level 5: Praktik Analisis dan Pengolahan Data Sederhana (20 Soal)',
 };
 
 function cloneState<T>(obj: T): T {
@@ -217,17 +217,21 @@ export class RaceEngine {
       validatedAtMs - teamState.questionOpenedAtMs,
     );
 
-    const { isCorrect, normalizedDisplay } = validateAnswerAuthoritative(
-      activeQuestion,
-      answer,
-    );
+    const isTimeout = answer === '__TIMEOUT__';
+    const validation = isTimeout
+      ? { isCorrect: false, normalizedDisplay: 'Waktu Habis' }
+      : validateAnswerAuthoritative(activeQuestion, answer);
+
+    const { isCorrect, normalizedDisplay } = validation;
 
     session.cheerCounter += 1;
-    const message = pickMakassarCheer(
-      team,
-      isCorrect,
-      session.cheerCounter + teamState.currentIndex,
-    );
+    const message = isTimeout
+      ? `Waktu habis di Level ${activeQuestion.topicIndex}! Jangan ki' kendor, gas fokus di soal berikutnya!`
+      : pickMakassarCheer(
+          team,
+          isCorrect,
+          session.cheerCounter + teamState.currentIndex,
+        );
 
     const feedback: TeamAnswerFeedback = {
       questionId: activeQuestion.id,

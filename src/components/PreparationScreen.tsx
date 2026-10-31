@@ -1,5 +1,6 @@
 import React from 'react';
-import { FileText, Flag, Gauge, MousePointerClick, Play, Trophy } from 'lucide-react';
+import { FileText, Flag, Flame, Gauge, MousePointerClick, Play, Timer, Trophy } from 'lucide-react';
+import { getLevelConfig } from '../config/levels';
 import type { LeaderboardEntry } from '../types/game';
 
 interface TopicOption {
@@ -35,18 +36,19 @@ export const PreparationScreen: React.FC<PreparationScreenProps> = ({
 }) => {
   const activeTopic = topics.find((t) => t.topicFilter === topicFilter) ?? {
     topicFilter: 0,
-    label: 'Semua Materi Lengkap (100 Soal Sesuai Urutan File)',
+    label: 'Semua Level Beruntun: Level 1 s/d Level 5 (100 Soal)',
     count: 100,
   };
 
-  const trackMeters = activeTopic.count * 6.5;
+  const previewLevelCfg = getLevelConfig(topicFilter === 0 ? 1 : topicFilter);
+  const trackMeters = activeTopic.count * previewLevelCfg.stepAdvanceMeters;
 
   return (
     <section
       className="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(1180px,96vw)] pointer-events-auto"
       aria-label="Halaman Persiapan Balapan"
     >
-      <div className="bg-[#070D19]/92 border border-white/14 rounded-2xl p-4 md:p-5 shadow-2xl max-h-[54vh] overflow-y-auto racing-scroll">
+      <div className="bg-[#070D19]/92 border border-white/14 rounded-2xl p-4 md:p-5 shadow-2xl max-h-[55vh] overflow-y-auto racing-scroll">
         {/* Compact Header */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-2.5 border-b border-white/10">
           <div>
@@ -55,7 +57,7 @@ export const PreparationScreen: React.FC<PreparationScreenProps> = ({
                 LAMACCA <span className="text-[#FBBF24]">VS</span> TOACCA
               </span>
               <span className="text-xs font-sans font-normal text-slate-400">
-                · 3D Edu Racing Challenge (Informatika SMP)
+                · 3D Edu Racing Challenge (5 Level Adrenaline)
               </span>
             </h1>
           </div>
@@ -88,35 +90,84 @@ export const PreparationScreen: React.FC<PreparationScreenProps> = ({
           </div>
         </div>
 
-        {/* Compact Topic Selector */}
+        {/* Level Selector (5 Adrenaline Levels + All Levels Mode) */}
         <div className="mt-2.5">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
             {topics.map((tp) => {
               const selected = tp.topicFilter === topicFilter;
+              const lvlCfg = tp.topicFilter >= 1 ? getLevelConfig(tp.topicFilter) : null;
               const shortLabel =
                 tp.topicFilter === 0
-                  ? 'Semua Topik (100 Soal)'
-                  : `Topik ${tp.topicFilter} (20 Soal)`;
+                  ? 'Semua Level (1–5)'
+                  : `Level ${tp.topicFilter} (20 Soal)`;
+              const subAdrenaline =
+                tp.topicFilter === 0
+                  ? '100 Soal · Bertahap'
+                  : `${lvlCfg?.adrenalineBadge ?? ''} · ${lvlCfg?.speedMultiplierLabel ?? ''}`;
+
               return (
                 <button
                   key={tp.topicFilter}
                   type="button"
                   title={tp.label}
                   onClick={() => onChangeTopicFilter(tp.topicFilter)}
-                  className={`text-left px-2.5 py-1.5 rounded-lg border text-[11px] transition-colors ${
+                  className={`text-left px-2.5 py-1.5 rounded-lg border text-[11px] transition-colors cursor-pointer ${
                     selected
                       ? 'bg-[#0EA5E9]/20 border-[#38BDF8] text-white font-semibold'
                       : 'bg-slate-900/80 border-white/10 text-slate-300 hover:border-white/25 hover:text-white'
                   }`}
                 >
                   <div className="truncate">{shortLabel}</div>
+                  <div
+                    className={`text-[10px] truncate mt-0.5 ${
+                      selected
+                        ? lvlCfg
+                          ? lvlCfg.uiTextClass
+                          : 'text-[#38BDF8]'
+                        : 'text-slate-400'
+                    }`}
+                  >
+                    {subAdrenaline}
+                  </div>
                 </button>
               );
             })}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1 truncate">
-            Materi aktif: <span className="text-slate-200">{activeTopic.label}</span>
-          </p>
+
+          {/* Active Level & Adrenaline Info Line */}
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-300">
+            <span className="truncate">
+              Level aktif: <strong className="text-white">{activeTopic.label}</strong>
+            </span>
+
+            {topicFilter === 0 ? (
+              <span className="inline-flex flex-wrap items-center gap-1.5 text-[11px] text-amber-300 font-mono-num">
+                <Flame className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                <span>Adrenaline Naik Tiap Level:</span>
+                <span className="text-sky-300">Lv1 (30d · 1.0x)</span>
+                <span className="text-slate-500">→</span>
+                <span className="text-rose-300">Lv5 (13d · 2.3x)</span>
+              </span>
+            ) : (
+              <span className="inline-flex flex-wrap items-center gap-2 text-[11px] font-mono-num">
+                <span className={`inline-flex items-center gap-1 font-semibold ${previewLevelCfg.uiTextClass}`}>
+                  <Flame className="w-3.5 h-3.5" />
+                  <span>{previewLevelCfg.adrenalineBadge}</span>
+                </span>
+                <span className="text-slate-600">·</span>
+                <span className="text-slate-200">
+                  Laju <strong className="text-white">{previewLevelCfg.speedMultiplierLabel}</strong>
+                </span>
+                <span className="text-slate-600">·</span>
+                <span className="inline-flex items-center gap-1 text-slate-200">
+                  <Timer className="w-3 h-3 text-[#FBBF24]" />
+                  <span>Batas {previewLevelCfg.baseTimeLimitSec}d/soal</span>
+                </span>
+                <span className="text-slate-600">·</span>
+                <span className="text-slate-200">{previewLevelCfg.bpmDisplay} BPM</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Two Teams Compact Cards */}
@@ -194,7 +245,7 @@ export const PreparationScreen: React.FC<PreparationScreenProps> = ({
               </span>
             ) : (
               <span>
-                Kedua motor terus melaju lambat di sirkuit — jawaban benar membuat motor melaju kencang!
+                Setiap naik Level, kecepatan motor, tempo sirkuit, & tekanan waktu Adrenaline makin menantang!
               </span>
             )}
           </div>

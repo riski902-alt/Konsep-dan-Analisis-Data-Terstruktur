@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { getLevelConfig } from '../config/levels';
 import type { CameraMode, RaceStatus, WinnerResult } from '../types/game';
 import {
   createChampionshipTrophy,
@@ -22,6 +23,7 @@ export interface BikeFXEvent {
 }
 
 interface RaceArenaCanvasProps {
+  arenaLevel: number;
   totalSteps: number;
   lamaccaSteps: number;
   toaccaSteps: number;
@@ -37,16 +39,17 @@ interface RaceArenaCanvasProps {
   toaccaFx: BikeFXEvent;
 }
 
-const BASE_CRUISE_SPEED = 4.2; // m/s continuous slow forward cruise when not answering
-const STEP_ADVANCE = 10.5; // meters of high-speed turbo surge per correct answer
 const SEGMENT_LEN = 256; // exact modular length for seamless infinite circuit leapfrogging
 const LANE_X_LAMACCA = -2.35;
 const LANE_X_TOACCA = 2.35;
 
-// Pre-allocated math vectors (Zero GC inside render loop)
+// Pre-allocated math vectors & colors (Zero GC inside render loop)
 const _camTargetPos = new THREE.Vector3();
 const _camLookTarget = new THREE.Vector3();
 const _currentLookAt = new THREE.Vector3(0, 1.3, -8);
+const _targetSkyCol = new THREE.Color();
+const _targetRimCol = new THREE.Color();
+const _targetStreakCol = new THREE.Color();
 
 export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -59,6 +62,10 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
 
   const bikeAnimStateRef = useRef({
     cruiseZ: 0,
+    lamaccaStepDist: 0,
+    toaccaStepDist: 0,
+    prevLamaccaSteps: 0,
+    prevToaccaSteps: 0,
     lamaccaZ: 0,
     toaccaZ: 0,
     lockedFinishZ: null as number | null,
@@ -563,11 +570,12 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
 
     const refreshDigitalBoard = () => {
       const p = propsRef.current;
-      let statusLabel = 'BALAPAN BERLANGSUNG';
-      if (p.status === 'preparing') statusLabel = 'SIAP DI GARIS START';
+      const lvlCfg = getLevelConfig(p.arenaLevel);
+      let statusLabel = `LEVEL ${lvlCfg.level} · ${lvlCfg.adrenalineBadge.toUpperCase()}`;
+      if (p.status === 'preparing') statusLabel = `SIAP: LEVEL ${lvlCfg.level}`;
       else if (p.status === 'countdown') {
         statusLabel =
-          p.countdownValue === 'GO' ? 'GO! GAS POLL!' : `BERSIAP: ${p.countdownValue ?? ''}`;
+          p.countdownValue === 'GO' ? `GO! LEVEL ${lvlCfg.level}!` : `BERSIAP: ${p.countdownValue ?? ''}`;
       } else if (p.status === 'finished' || p.raceConcluded) {
         if (p.winner === 'lamacca') statusLabel = 'JUARA: TIM LAMACCA!';
         else if (p.winner === 'toacca') statusLabel = 'JUARA: TIM TOACCA!';
@@ -621,10 +629,31 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
 
       const p = propsRef.current;
       const anim = bikeAnimStateRef.current;
+      const lvlCfg = getLevelConfig(p.arenaLevel);
+
+      // Smoothly transition 3D Sky, Fog, Stadium Rim Light & Wind Streak Colors per Level Adrenaline!
+      _targetSkyCol.setHex(lvlCfg.skyHex);
+      _targetRimCol.setHex(lvlCfg.rimLightHex);
+      _targetStreakCol.setHex(lvlCfg.streakHex);
+
+      (scene.background as THREE.Color).lerp(_targetSkyCol, Math.min(1, dt * 2.2));
+      (scene.fog as THREE.FogExp2).color.lerp(_targetSkyCol, Math.min(1, dt * 2.2));
+      rimLight.color.lerp(_targetRimCol, Math.min(1, dt * 2.5));
+      rimLight.intensity = THREE.MathUtils.damp(
+        rimLight.intensity,
+        0.75 + (lvlCfg.level - 1) * 0.25,
+        3.0,
+        dt,
+      );
+      streakMat.color.lerp(_targetStreakCol, Math.min(1, dt * 3.0));
 
       // Reset circuit & bikes cleanly when on preparation or starting grid countdown
       if (p.status === 'preparing' || (p.status === 'countdown' && p.countdownValue !== 'GO')) {
         anim.cruiseZ = 0;
+        anim.lamaccaStepDist = 0;
+        anim.toaccaStepDist = 0;
+        anim.prevLamaccaSteps = 0;
+        anim.prevToaccaSteps = 0;
         anim.lamaccaZ = 0;
         anim.toaccaZ = 0;
         anim.lockedFinishZ = null;
@@ -632,6 +661,24 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
         segB.position.z = -352;
         finishArch.visible = false;
         finishPodiumGroup.visible = false;
+      }
+
+      if (p.lamaccaSteps === 0) {
+        anim.lamaccaStepDist = 0;
+        anim.prevLamaccaSteps = 0;
+      } else if (p.lamaccaSteps > anim.prevLamaccaSteps) {
+        anim.lamaccaStepDist +=
+          (p.lamaccaSteps - anim.prevLamaccaSteps) * lvlCfg.stepAdvanceMeters;
+        anim.prevLamaccaSteps = p.lamaccaSteps;
+      }
+
+      if (p.toaccaSteps === 0) {
+        anim.toaccaStepDist = 0;
+        anim.prevToaccaSteps = 0;
+      } else if (p.toaccaSteps > anim.prevToaccaSteps) {
+        anim.toaccaStepDist +=
+          (p.toaccaSteps - anim.prevToaccaSteps) * lvlCfg.stepAdvanceMeters;
+        anim.prevToaccaSteps = p.toaccaSteps;
       }
 
       // 1. Update Start Gantry Countdown Lights
@@ -662,25 +709,25 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
         }
       });
 
-      // 2. Continuous Slow Cruise ("MELAJU LAMBAT") vs Correct Answer Turbo Surge ("MELAJU KENCANG")
+      // 2. Continuous Cruise Speed (escalates each Level!) vs Correct Answer Turbo Surge
       const isActivelyRolling =
         (p.status === 'countdown' && p.countdownValue === 'GO') ||
         (p.status === 'racing' && !p.raceConcluded);
 
+      const levelCruiseSpeed = lvlCfg.cruiseSpeedMps;
       if (isActivelyRolling) {
-        // Both motorcycles continuously cruise forward slowly down the circuit even when not answering
-        anim.cruiseZ -= BASE_CRUISE_SPEED * dt;
+        anim.cruiseZ -= levelCruiseSpeed * dt;
       }
 
       // Anchor Finish Line Archway & 3D Trophy Podium the exact moment race concludes
       if ((p.raceConcluded || p.status === 'finished') && anim.lockedFinishZ === null) {
         let computedLeadTargetZ =
-          anim.cruiseZ - Math.max(p.lamaccaSteps, p.toaccaSteps) * STEP_ADVANCE;
+          anim.cruiseZ - Math.max(anim.lamaccaStepDist, anim.toaccaStepDist);
         const currentLeadZ = Math.min(anim.lamaccaZ, anim.toaccaZ);
         if (Math.abs(computedLeadTargetZ - currentLeadZ) < 4.0) {
-          anim.cruiseZ -= 10.5;
+          anim.cruiseZ -= lvlCfg.stepAdvanceMeters;
           computedLeadTargetZ =
-            anim.cruiseZ - Math.max(p.lamaccaSteps, p.toaccaSteps) * STEP_ADVANCE;
+            anim.cruiseZ - Math.max(anim.lamaccaStepDist, anim.toaccaStepDist);
         }
         anim.lockedFinishZ = computedLeadTargetZ + 2.2;
         finishArch.position.set(0, 0, anim.lockedFinishZ);
@@ -689,14 +736,14 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
         finishPodiumGroup.visible = true;
       }
 
-      const targetLamaccaZ = anim.cruiseZ - p.lamaccaSteps * STEP_ADVANCE;
-      const targetToaccaZ = anim.cruiseZ - p.toaccaSteps * STEP_ADVANCE;
+      const targetLamaccaZ = anim.cruiseZ - anim.lamaccaStepDist;
+      const targetToaccaZ = anim.cruiseZ - anim.toaccaStepDist;
 
       const prevLZ = anim.lamaccaZ;
       const prevTZ = anim.toaccaZ;
 
-      const lDamp = anim.lamaccaBoostTimer > 0 ? 6.2 : 5.0;
-      const tDamp = anim.toaccaBoostTimer > 0 ? 6.2 : 5.0;
+      const lDamp = anim.lamaccaBoostTimer > 0 ? 6.2 + lvlCfg.level * 0.35 : 5.0;
+      const tDamp = anim.toaccaBoostTimer > 0 ? 6.2 + lvlCfg.level * 0.35 : 5.0;
 
       anim.lamaccaZ = THREE.MathUtils.damp(anim.lamaccaZ, targetLamaccaZ, lDamp, dt);
       anim.toaccaZ = THREE.MathUtils.damp(anim.toaccaZ, targetToaccaZ, tDamp, dt);
@@ -710,29 +757,27 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
       // Seamless modular leapfrogging of the two 256m track segments
       const rearReferenceZ = Math.max(anim.lamaccaZ, anim.toaccaZ, camera.position.z);
       [segA, segB].forEach((seg) => {
-        // Front-most (-Z) edge of this segment is seg.position.z - 128
         if (rearReferenceZ < seg.position.z - SEGMENT_LEN / 2 - 32) {
           seg.position.z -= SEGMENT_LEN * 2;
         }
       });
 
-      const idleVibL = Math.sin(elapsed * 42) * 0.008;
-      const idleVibT = Math.cos(elapsed * 44) * 0.008;
+      const vibAmp = 0.007 + (lvlCfg.level - 1) * 0.0022;
+      const idleVibL = Math.sin(elapsed * (40 + lvlCfg.level * 4)) * vibAmp;
+      const idleVibT = Math.cos(elapsed * (42 + lvlCfg.level * 4)) * vibAmp;
 
-      // Wheel rotation directly matches real world speed (slow spin on cruise, rapid blur on correct boost!)
       const wheelRadius = 0.48;
       lamaccaBike.frontWheel.rotation.x -= (lSpeed * dt) / wheelRadius;
       lamaccaBike.rearWheel.rotation.x -= (lSpeed * dt) / wheelRadius;
       toaccaBike.frontWheel.rotation.x -= (tSpeed * dt) / wheelRadius;
       toaccaBike.rearWheel.rotation.x -= (tSpeed * dt) / wheelRadius;
 
-      // High-speed turbo boost FX (Wheelie + Dual Afterburner Flames) when answering correctly
       if (anim.lamaccaBoostTimer > 0) {
         anim.lamaccaBoostTimer = Math.max(0, anim.lamaccaBoostTimer - dt);
         const boostRatio = Math.sin((anim.lamaccaBoostTimer / 1.25) * Math.PI);
-        lamaccaBike.chassisPivot.rotation.x = boostRatio * 0.17;
+        lamaccaBike.chassisPivot.rotation.x = boostRatio * (0.16 + lvlCfg.level * 0.012);
         (lamaccaBike.boostFlame.material as THREE.MeshBasicMaterial).opacity = boostRatio * 0.95;
-        lamaccaBike.boostFlame.scale.set(1.15, 0.95 + Math.random() * 0.75, 1.15);
+        lamaccaBike.boostFlame.scale.set(1.15, 0.95 + Math.random() * 0.85, 1.15);
       } else {
         lamaccaBike.chassisPivot.rotation.x = THREE.MathUtils.damp(
           lamaccaBike.chassisPivot.rotation.x,
@@ -746,9 +791,9 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
       if (anim.toaccaBoostTimer > 0) {
         anim.toaccaBoostTimer = Math.max(0, anim.toaccaBoostTimer - dt);
         const boostRatio = Math.sin((anim.toaccaBoostTimer / 1.25) * Math.PI);
-        toaccaBike.chassisPivot.rotation.x = boostRatio * 0.17;
+        toaccaBike.chassisPivot.rotation.x = boostRatio * (0.16 + lvlCfg.level * 0.012);
         (toaccaBike.boostFlame.material as THREE.MeshBasicMaterial).opacity = boostRatio * 0.95;
-        toaccaBike.boostFlame.scale.set(1.15, 0.95 + Math.random() * 0.75, 1.15);
+        toaccaBike.boostFlame.scale.set(1.15, 0.95 + Math.random() * 0.85, 1.15);
       } else {
         toaccaBike.chassisPivot.rotation.x = THREE.MathUtils.damp(
           toaccaBike.chassisPivot.rotation.x,
@@ -759,7 +804,6 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
         (toaccaBike.boostFlame.material as THREE.MeshBasicMaterial).opacity = 0;
       }
 
-      // Wrong answer shudder + brake light flash (remains at slow cruise speed without boost)
       if (anim.lamaccaWrongTimer > 0) {
         anim.lamaccaWrongTimer = Math.max(0, anim.lamaccaWrongTimer - dt);
         lamaccaBike.chassisPivot.rotation.z =
@@ -797,15 +841,16 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
       keySun.target.position.set(0, 0, midZ - 4);
       keySun.target.updateMatrixWorld();
 
-      // 4. Wind Speed Streak Particles (Subtle on slow cruise, intense rush on high-speed turbo boost!)
+      // 4. Wind Speed Streak Particles (Intensify with higher Adrenaline Levels + Turbo Boost!)
       const maxBikeSpeed = Math.max(lSpeed, tSpeed);
-      const boostExcess = Math.max(0, maxBikeSpeed - BASE_CRUISE_SPEED);
-      streakMat.opacity = THREE.MathUtils.clamp(0.06 + boostExcess * 0.025, 0.06, 0.58);
+      const boostExcess = Math.max(0, maxBikeSpeed - 4.0);
+      const levelWindBase = 0.06 + (lvlCfg.level - 1) * 0.045;
+      streakMat.opacity = THREE.MathUtils.clamp(levelWindBase + boostExcess * 0.025, 0.06, 0.65);
       for (let i = 0; i < SPEED_STREAKS; i++) {
         const st = streakSeeds[i];
         const localZ = ((elapsed * (st.speed + boostExcess * 1.9) + st.zPhase) % 45) - 30;
         _instObj.position.set(st.xOff, st.y, midZ + localZ);
-        _instObj.scale.set(1, 1, 0.55 + boostExcess * 0.14);
+        _instObj.scale.set(1, 1, 0.55 + (lvlCfg.level - 1) * 0.22 + boostExcess * 0.14);
         _instObj.updateMatrix();
         streakInstanced.setMatrixAt(i, _instObj.matrix);
       }
@@ -989,6 +1034,7 @@ export const RaceArenaCanvas: React.FC<RaceArenaCanvasProps> = (props) => {
   useEffect(() => {
     updateBoardRef.current?.();
   }, [
+    props.arenaLevel,
     props.totalSteps,
     props.lamaccaSteps,
     props.toaccaSteps,

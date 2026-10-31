@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { soundEngine } from './audio/soundEngine';
 import { CountdownOverlay } from './components/CountdownOverlay';
+import { LevelBannerOverlay } from './components/LevelBannerOverlay';
 import { PreparationScreen } from './components/PreparationScreen';
 import { QuestionControlDock } from './components/QuestionControlDock';
 import { TopRaceHud } from './components/TopRaceHud';
@@ -26,32 +27,32 @@ interface TopicOption {
 const DEFAULT_TOPICS: TopicOption[] = [
   {
     topicFilter: 0,
-    label: 'Semua Materi Lengkap (100 Soal Sesuai Urutan File)',
+    label: 'Semua Level Beruntun: Level 1 s/d Level 5 (100 Soal)',
     count: 100,
   },
   {
     topicFilter: 1,
-    label: 'Topik 1: Konsep Dasar Data: Data Terstruktur vs. Tidak Terstruktur (20 Soal)',
+    label: 'Level 1: Konsep Dasar Data: Data Terstruktur vs. Tidak Terstruktur (20 Soal)',
     count: 20,
   },
   {
     topicFilter: 2,
-    label: 'Topik 2: Pengidentifikasian dan Pemodelan Data Terstruktur (20 Soal)',
+    label: 'Level 2: Pengidentifikasian dan Pemodelan Data Terstruktur (20 Soal)',
     count: 20,
   },
   {
     topicFilter: 3,
-    label: 'Topik 3: Antarmuka dan Elemen Dasar Lembar Kerja Pengolah Data (20 Soal)',
+    label: 'Level 3: Antarmuka dan Elemen Dasar Lembar Kerja Pengolah Data (20 Soal)',
     count: 20,
   },
   {
     topicFilter: 4,
-    label: 'Topik 4: Pengolahan dan Pengorganisasian Data (20 Soal)',
+    label: 'Level 4: Pengolahan dan Pengorganisasian Data (20 Soal)',
     count: 20,
   },
   {
     topicFilter: 5,
-    label: 'Topik 5: Praktik Analisis dan Pengolahan Data Sederhana (20 Soal)',
+    label: 'Level 5: Praktik Analisis dan Pengolahan Data Sederhana (20 Soal)',
     count: 20,
   },
 ];
@@ -123,6 +124,11 @@ export default function App() {
   const [inspectPodiumOnly, setInspectPodiumOnly] = useState<boolean>(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
+  const [levelBanner, setLevelBanner] = useState<{
+    level: number | null;
+    triggeredByTeam: string | null;
+  }>({ level: null, triggeredByTeam: null });
+
   const [audioSettings, setAudioSettings] = useState<AudioSettings>(() =>
     soundEngine.getSettings(),
   );
@@ -131,11 +137,33 @@ export default function App() {
   const [toaccaFx, setToaccaFx] = useState<BikeFXEvent>({ seq: 0, type: 'correct' });
 
   const countdownTimersRef = useRef<number[]>([]);
+  const bannerTimerRef = useRef<number | null>(null);
+  const prevLamaccaLevelRef = useRef<number>(0);
+  const prevToaccaLevelRef = useRef<number>(0);
 
   const clearCountdownTimers = useCallback(() => {
     countdownTimersRef.current.forEach((id) => clearTimeout(id));
     countdownTimersRef.current = [];
   }, []);
+
+  const clearBannerTimer = useCallback(() => {
+    if (bannerTimerRef.current !== null) {
+      clearTimeout(bannerTimerRef.current);
+      bannerTimerRef.current = null;
+    }
+  }, []);
+
+  const triggerLevelBanner = useCallback(
+    (level: number, triggeredByTeam: string | null, durationMs = 3600) => {
+      clearBannerTimer();
+      setLevelBanner({ level, triggeredByTeam });
+      bannerTimerRef.current = window.setTimeout(() => {
+        setLevelBanner({ level: null, triggeredByTeam: null });
+        bannerTimerRef.current = null;
+      }, durationMs);
+    },
+    [clearBannerTimer],
+  );
 
   const fetchInitialData = useCallback(async () => {
     try {
@@ -155,9 +183,10 @@ export default function App() {
     fetchInitialData();
     return () => {
       clearCountdownTimers();
+      clearBannerTimer();
       soundEngine.dispose();
     };
-  }, [fetchInitialData, clearCountdownTimers]);
+  }, [fetchInitialData, clearCountdownTimers, clearBannerTimer]);
 
   useEffect(() => {
     if (uiStatus !== 'racing' || !session) return;
@@ -168,6 +197,41 @@ export default function App() {
     }, 500);
     return () => clearInterval(interval);
   }, [uiStatus, session]);
+
+  // Compute each team's active Level (1..5) and global Arena Adrenaline Level
+  const fallbackStartLevel = topicFilter === 0 ? 1 : topicFilter;
+  const lamaccaActiveIdx = session
+    ? Math.min(Math.max(0, questions.length - 1), session.lamacca.currentIndex)
+    : 0;
+  const toaccaActiveIdx = session
+    ? Math.min(Math.max(0, questions.length - 1), session.toacca.currentIndex)
+    : 0;
+
+  const lamaccaLevel = questions[lamaccaActiveIdx]?.topicIndex ?? fallbackStartLevel;
+  const toaccaLevel = questions[toaccaActiveIdx]?.topicIndex ?? fallbackStartLevel;
+  const arenaLevel =
+    uiStatus === 'preparing'
+      ? fallbackStartLevel
+      : Math.max(lamaccaLevel, toaccaLevel);
+
+  // Escalate Adrenaline & show on-screen Level Announcement whenever a team advances to Level 2, 3, 4, or 5
+  useEffect(() => {
+    if (uiStatus !== 'racing' || !session) return;
+
+    soundEngine.setAdrenalineLevel(arenaLevel);
+
+    if (prevLamaccaLevelRef.current > 0 && lamaccaLevel > prevLamaccaLevelRef.current) {
+      prevLamaccaLevelRef.current = lamaccaLevel;
+      soundEngine.playLevelUpAdrenaline(lamaccaLevel);
+      triggerLevelBanner(lamaccaLevel, 'TIM LAMACCA MEMASUKI LEVEL BARU!', 3800);
+    }
+
+    if (prevToaccaLevelRef.current > 0 && toaccaLevel > prevToaccaLevelRef.current) {
+      prevToaccaLevelRef.current = toaccaLevel;
+      soundEngine.playLevelUpAdrenaline(toaccaLevel);
+      triggerLevelBanner(toaccaLevel, 'TIM TOACCA MEMASUKI LEVEL BARU!', 3800);
+    }
+  }, [uiStatus, session, lamaccaLevel, toaccaLevel, arenaLevel, triggerLevelBanner]);
 
   const handleAudioChange = useCallback(
     (next: AudioSettings) => {
@@ -186,6 +250,8 @@ export default function App() {
     setErrorNotice(null);
     soundEngine.unlock();
     clearCountdownTimers();
+    clearBannerTimer();
+    setLevelBanner({ level: null, triggeredByTeam: null });
 
     try {
       const data = await raceClient.startRace(
@@ -193,6 +259,13 @@ export default function App() {
         lamaccaPlayer.trim() || 'Pembalap LAMACCA',
         toaccaPlayer.trim() || 'Pembalap TOACCA',
       );
+
+      const startLvl =
+        data.questions[0]?.topicIndex ?? (topicFilter === 0 ? 1 : topicFilter);
+
+      prevLamaccaLevelRef.current = 0;
+      prevToaccaLevelRef.current = 0;
+      soundEngine.setAdrenalineLevel(startLvl);
 
       setSession(data.session);
       setQuestions(data.questions);
@@ -224,9 +297,14 @@ export default function App() {
 
       const t4 = window.setTimeout(async () => {
         setCountdownValue(null);
+        prevLamaccaLevelRef.current = startLvl;
+        prevToaccaLevelRef.current = startLvl;
         setUiStatus('racing');
+        soundEngine.setAdrenalineLevel(startLvl);
         soundEngine.setCruiseMode(true);
         soundEngine.startRaceMusic();
+        soundEngine.playLevelUpAdrenaline(startLvl);
+        triggerLevelBanner(startLvl, 'SIRKUIT BALAP DIMULAI', 3600);
         try {
           const goSession = await raceClient.markGo(data.session.sessionId);
           if (goSession) {
@@ -246,21 +324,34 @@ export default function App() {
     } finally {
       setIsStarting(false);
     }
-  }, [isStarting, clearCountdownTimers, topicFilter, lamaccaPlayer, toaccaPlayer]);
+  }, [
+    isStarting,
+    clearCountdownTimers,
+    clearBannerTimer,
+    triggerLevelBanner,
+    topicFilter,
+    lamaccaPlayer,
+    toaccaPlayer,
+  ]);
 
-  const transitionToVictory = useCallback(async (finishedSession: RaceSessionState) => {
-    setSession(finishedSession);
-    setUiStatus('finished');
-    soundEngine.setCruiseMode(false);
-    soundEngine.stopEngineIdle();
-    soundEngine.playVictoryFanfareAndTrophy();
-    try {
-      const lb = await raceClient.getLeaderboard();
-      setLeaderboard(lb);
-    } catch {
-      // ignore
-    }
-  }, []);
+  const transitionToVictory = useCallback(
+    async (finishedSession: RaceSessionState) => {
+      clearBannerTimer();
+      setLevelBanner({ level: null, triggeredByTeam: null });
+      setSession(finishedSession);
+      setUiStatus('finished');
+      soundEngine.setCruiseMode(false);
+      soundEngine.stopEngineIdle();
+      soundEngine.playVictoryFanfareAndTrophy();
+      try {
+        const lb = await raceClient.getLeaderboard();
+        setLeaderboard(lb);
+      } catch {
+        // ignore
+      }
+    },
+    [clearBannerTimer],
+  );
 
   const handleSubmitTeamAnswer = useCallback(
     async (team: TeamId, questionId: string, answer: unknown) => {
@@ -321,13 +412,18 @@ export default function App() {
 
   const handleResetToPreparation = useCallback(() => {
     clearCountdownTimers();
+    clearBannerTimer();
+    setLevelBanner({ level: null, triggeredByTeam: null });
+    prevLamaccaLevelRef.current = 0;
+    prevToaccaLevelRef.current = 0;
     soundEngine.stopMusicLoop();
     soundEngine.stopEngineIdle();
+    soundEngine.setAdrenalineLevel(1);
     setCountdownValue(null);
     setUiStatus('preparing');
     setSession(null);
     setInspectPodiumOnly(false);
-  }, [clearCountdownTimers]);
+  }, [clearCountdownTimers, clearBannerTimer]);
 
   const selectedTopicObj =
     topics.find((t) => t.topicFilter === topicFilter) ?? DEFAULT_TOPICS[0];
@@ -338,6 +434,7 @@ export default function App() {
     <main className="relative w-screen h-screen overflow-hidden bg-[#070D19] text-[#F8FAFC]">
       <RaceArenaCanvas
         totalSteps={effectiveTotalSteps}
+        arenaLevel={arenaLevel}
         lamaccaSteps={session?.lamacca.steps ?? 0}
         toaccaSteps={session?.toacca.steps ?? 0}
         lamaccaName={session?.lamacca.playerName ?? lamaccaPlayer}
@@ -355,6 +452,7 @@ export default function App() {
       <TopRaceHud
         status={uiStatus}
         session={session}
+        arenaLevel={arenaLevel}
         elapsedSeconds={elapsedSeconds}
         cameraMode={cameraMode}
         onChangeCamera={setCameraMode}
@@ -364,6 +462,13 @@ export default function App() {
         onToggleCollapse={() => setHudCollapsed((v) => !v)}
         onResetToPrep={handleResetToPreparation}
       />
+
+      {uiStatus === 'racing' && (
+        <LevelBannerOverlay
+          level={levelBanner.level}
+          triggeredByTeam={levelBanner.triggeredByTeam}
+        />
+      )}
 
       {errorNotice && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-rose-950/95 border border-rose-400/50 text-rose-100 text-xs px-4 py-2 rounded-xl shadow-xl flex items-center gap-3">
